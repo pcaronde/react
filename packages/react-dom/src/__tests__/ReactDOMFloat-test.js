@@ -2946,24 +2946,7 @@ body {
       <link rel="preload" as="style" href="bar" />,
     ]);
 
-    // Try just this and crash all of Jest
     errorStylesheets(['bar']);
-
-    // // Try this and it fails the test when it shouldn't
-    // await act(() => {
-    //   errorStylesheets(['bar']);
-    // });
-
-    // // Try this there is nothing throwing here which is not really surprising since
-    // // the error is bubbling up through some kind of unhandled promise rejection thingy but
-    // // still I thought it was worth confirming
-    // try {
-    //   await act(() => {
-    //     errorStylesheets(['bar']);
-    //   });
-    // } catch (e) {
-    //   console.log(e);
-    // }
 
     loadStylesheets(['foo']);
     assertLog(['load stylesheet: foo', 'error stylesheet: bar']);
@@ -3193,6 +3176,131 @@ body {
           <link rel="preload" href="bar" as="style" />
         </head>
         <body>hello3</body>
+      </html>,
+    );
+  });
+
+  it('will put a Suspense boundary into fallback if it contains a stylesheet not loaded during a sync update', async () => {
+    function App({children}) {
+      return (
+        <html>
+          <body>{children}</body>
+        </html>
+      );
+    }
+    const root = ReactDOMClient.createRoot(document);
+
+    await clientAct(() => {
+      root.render(<App />);
+    });
+    await waitForAll([]);
+
+    await clientAct(() => {
+      root.render(
+        <App>
+          <Suspense fallback="loading...">
+            <div>
+              hello
+              <link rel="stylesheet" href="foo" precedence="default" />
+            </div>
+          </Suspense>
+        </App>,
+      );
+    });
+    await waitForAll([]);
+
+    // Although the commit suspended, a preload was inserted.
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="preload" href="foo" as="style" />
+        </head>
+        <body>loading...</body>
+      </html>,
+    );
+
+    loadPreloads(['foo']);
+    assertLog(['load preload: foo']);
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="foo" data-precedence="default" />
+          <link rel="preload" href="foo" as="style" />
+        </head>
+        <body>loading...</body>
+      </html>,
+    );
+
+    loadStylesheets(['foo']);
+    assertLog(['load stylesheet: foo']);
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="foo" data-precedence="default" />
+          <link rel="preload" href="foo" as="style" />
+        </head>
+        <body>
+          <div>hello</div>
+        </body>
+      </html>,
+    );
+
+    await clientAct(() => {
+      root.render(
+        <App>
+          <Suspense fallback="loading...">
+            <div>
+              hello
+              <link rel="stylesheet" href="foo" precedence="default" />
+              <link rel="stylesheet" href="bar" precedence="default" />
+            </div>
+          </Suspense>
+        </App>,
+      );
+    });
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="foo" data-precedence="default" />
+          <link rel="preload" href="foo" as="style" />
+          <link rel="preload" href="bar" as="style" />
+        </head>
+        <body>
+          <div style="display: none;">hello</div>loading...
+        </body>
+      </html>,
+    );
+
+    loadPreloads(['bar']);
+    assertLog(['load preload: bar']);
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="foo" data-precedence="default" />
+          <link rel="stylesheet" href="bar" data-precedence="default" />
+          <link rel="preload" href="foo" as="style" />
+          <link rel="preload" href="bar" as="style" />
+        </head>
+        <body>
+          <div style="display: none;">hello</div>loading...
+        </body>
+      </html>,
+    );
+
+    loadStylesheets(['bar']);
+    assertLog(['load stylesheet: bar']);
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="foo" data-precedence="default" />
+          <link rel="stylesheet" href="bar" data-precedence="default" />
+          <link rel="preload" href="foo" as="style" />
+          <link rel="preload" href="bar" as="style" />
+        </head>
+        <body>
+          <div style="">hello</div>
+        </body>
       </html>,
     );
   });

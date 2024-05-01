@@ -501,8 +501,8 @@ export function maySuspendCommit(type: Type, props: Props): boolean {
   return false;
 }
 
-export function preloadInstance(type: Type, props: Props): boolean {
-  return true;
+export function preloadInstance(type: Type, props: Props): number {
+  return 0;
 }
 
 export function startSuspendingCommit(): void {}
