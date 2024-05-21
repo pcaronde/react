@@ -25,6 +25,7 @@ import {
   REACT_STRICT_MODE_TYPE as StrictMode,
 } from 'shared/ReactSymbols';
 import {createElement} from 'react';
+import {sanitizeString} from '../devtools/views/Components/utils';
 
 describe('utils', () => {
   describe('getDisplayName', () => {
@@ -385,6 +386,14 @@ describe('utils', () => {
         line: 1,
         column: 165558,
       });
+    });
+  });
+
+  describe('sanitizeString', () => {
+    it('should sanitize the string if escape characters are given', () => {
+      expect(sanitizeString('hello\nworld\nfoo\nbar\nbaz')).toEqual(
+        'hello world foo bar baz',
+      );
     });
   });
 });
