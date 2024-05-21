@@ -40,10 +40,12 @@ function printWarning(level, format, args) {
   // When changing this logic, you might want to also
   // update consoleWithStackDev.www.js as well.
   if (__DEV__) {
-    const stack = ReactSharedInternals.getStackAddendum();
-    if (stack !== '') {
-      format += '%s';
-      args = args.concat([stack]);
+    if (ReactSharedInternals.getCurrentStack) {
+      const stack = ReactSharedInternals.getCurrentStack();
+      if (stack !== '') {
+        format += '%s';
+        args = args.concat([stack]);
+      }
     }
 
     // eslint-disable-next-line react-internal/safe-string-coercion
