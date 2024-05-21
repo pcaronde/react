@@ -471,8 +471,8 @@ export function maySuspendCommit(type, props) {
 }
 
 export function preloadInstance(type, props) {
-  // Return true to indicate it's already loaded
-  return true;
+  // Return 0 to indicate it's already loaded
+  return 0;
 }
 
 export function startSuspendingCommit() {}

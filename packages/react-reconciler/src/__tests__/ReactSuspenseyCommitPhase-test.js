@@ -44,7 +44,18 @@ describe('ReactSuspenseyCommitPhase', () => {
     return (
       <suspensey-thing
         src={src}
+        timeout={100}
         onLoadStart={() => Scheduler.log(`Image requested [${src}]`)}
+      />
+    );
+  }
+
+  function SuspenseyCSS({src}) {
+    return (
+      <suspensey-thing
+        src={src}
+        timeout={Infinity}
+        onLoadStart={() => Scheduler.log(`CSS requested [${src}]`)}
       />
     );
   }
@@ -113,14 +124,43 @@ describe('ReactSuspenseyCommitPhase', () => {
         </Suspense>,
       );
     });
-    // We intentionally don't preload during an urgent update because the
-    // resource will be inserted synchronously, anyway.
-    // TODO: Maybe we should, though? Could be that the browser is able to start
-    // the preload in background even though the main thread is blocked. Likely
-    // a micro-optimization either way because typically new content is loaded
-    // during a transition, not an urgent render.
-    expect(getSuspenseyThingStatus('A')).toBe(null);
+    assertLog(['Image requested [A]']);
+    expect(getSuspenseyThingStatus('A')).toBe('pending');
     expect(root).toMatchRenderedOutput(<suspensey-thing src="A" />);
+  });
+
+  test('renders fallback during urgent update if required timeout is Infinite', async () => {
+    const root = ReactNoop.createRoot();
+    resolveSuspenseyThing('A');
+    await act(async () => {
+      root.render(
+        <Suspense fallback={<Text text="Loading..." />}>
+          <SuspenseyCSS src="A" />
+        </Suspense>,
+      );
+    });
+    expect(getSuspenseyThingStatus('A')).toBe('fulfilled');
+    expect(root).toMatchRenderedOutput(<suspensey-thing src="A" />);
+
+    await act(async () => {
+      root.render(
+        <Suspense fallback={<Text text="Loading..." />}>
+          <SuspenseyCSS src="B" />
+        </Suspense>,
+      );
+    });
+    assertLog(['CSS requested [B]', 'Loading...']);
+    expect(getSuspenseyThingStatus('B')).toBe('pending');
+    expect(root).toMatchRenderedOutput(
+      <>
+        <suspensey-thing src="A" hidden={true} />
+        Loading...
+      </>,
+    );
+
+    resolveSuspenseyThing('B');
+    expect(getSuspenseyThingStatus('B')).toBe('fulfilled');
+    expect(root).toMatchRenderedOutput(<suspensey-thing src="B" />);
   });
 
   test('an urgent update interrupts a suspended commit', async () => {

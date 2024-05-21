@@ -3153,21 +3153,24 @@ export function mayResourceSuspendCommit(resource: Resource): boolean {
   );
 }
 
-export function preloadInstance(type: Type, props: Props): boolean {
-  // Return true to indicate it's already loaded
-  return true;
+type RequiredTimeout = number;
+export function preloadInstance(type: Type, props: Props): RequiredTimeout {
+  // Return 0 to indicate it's already loaded
+  return 0;
 }
 
-export function preloadResource(resource: Resource): boolean {
+export function preloadResource(resource: Resource): RequiredTimeout {
   if (
     resource.type === 'stylesheet' &&
     (resource.state.loading & Settled) === NotLoaded
   ) {
-    // we have not finished loading the underlying stylesheet yet.
-    return false;
+    // Return Infinity to indicate it must still require loading
+    // and that React must wait forever
+    return Infinity;
   }
-  // Return true to indicate it's already loaded
-  return true;
+
+  // Return 0 to indicate it's already loaded
+  return 0;
 }
 
 type SuspendedState = {

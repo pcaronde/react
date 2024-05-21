@@ -91,7 +91,7 @@ describe('ReactFiberHostContext', () => {
         return false;
       },
       preloadInstance(type, props) {
-        return true;
+        return 0;
       },
       startSuspendingCommit() {},
       suspendInstance(type, props) {},

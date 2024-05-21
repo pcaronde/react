@@ -586,10 +586,13 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
       );
     },
 
-    preloadInstance(type: string, props: Props): boolean {
+    preloadInstance(type: string, props: Props): number {
       if (type !== 'suspensey-thing' || typeof props.src !== 'string') {
         throw new Error('Attempted to preload unexpected instance: ' + type);
       }
+
+      const requiredTimeout =
+        typeof props.timeout === 'number' ? props.timeout : 100;
 
       // In addition to preloading an instance, this method asks whether the
       // instance is ready to be committed. If it's not, React may yield to the
@@ -609,14 +612,14 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
         if (typeof onLoadStart === 'function') {
           onLoadStart();
         }
-        return false;
+        return requiredTimeout;
       } else {
-        // If this is false, React will trigger a fallback, if needed.
-        return record.status === 'fulfilled';
+        // If this is zero React will not suspend the commit or trigger a fallback
+        return record.status === 'fulfilled' ? 0 : requiredTimeout;
       }
     },
 
-    preloadResource(resource: mixed): boolean {
+    preloadResource(resource: mixed): number {
       throw new Error(
         'Resources are not implemented for React Noop yet. This method should not be called',
       );

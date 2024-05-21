@@ -128,6 +128,7 @@ import {
   setShallowSuspenseListContext,
   ForceSuspenseFallback,
   setDefaultShallowSuspenseListContext,
+  getSuspenseHandler,
 } from './ReactFiberSuspenseContext';
 import {popHiddenContext} from './ReactFiberHiddenContext';
 import {findFirstSuspended} from './ReactFiberSuspenseComponent';
@@ -534,33 +535,31 @@ function preloadInstanceAndSuspendIfNeeded(
   // loaded yet.
   workInProgress.flags |= MaySuspendCommit;
 
-  // Check if we're rendering at a "non-urgent" priority. This is the same
-  // check that `useDeferredValue` does to determine whether it needs to
-  // defer. This is partly for gradual adoption purposes (i.e. shouldn't start
-  // suspending until you opt in with startTransition or Suspense) but it
-  // also happens to be the desired behavior for the concrete use cases we've
-  // thought of so far, like CSS loading, fonts, images, etc.
-  //
+  // preload the instance if necessary. Even if this is an urgent render there
+  // could be benefits to preloading early.
+  // @TODO we should probably do the preload in begin work
+  const requiredTimeout = preloadInstance(type, props);
+
   // We check the "root" render lanes here rather than the "subtree" render
   // because during a retry or offscreen prerender, the "subtree" render
   // lanes may include additional "base" lanes that were deferred during
   // a previous render.
-  // TODO: We may decide to expose a way to force a fallback even during a
-  // sync update.
   const rootRenderLanes = getWorkInProgressRootRenderLanes();
   if (!includesOnlyNonUrgentLanes(rootRenderLanes)) {
-    // This is an urgent render. Don't suspend or show a fallback. Also,
-    // there's no need to preload, because we're going to commit this
-    // synchronously anyway.
-    // TODO: Could there be benefit to preloading even during a synchronous
-    // render? The main thread will be blocked until the commit phase, but
-    // maybe the browser would be able to start loading off thread anyway?
-    // Likely a micro-optimization either way because typically new content
-    // is loaded during a transition, not an urgent render.
+    // This is an urgent render. If our required timeout is infinite
+    // we suspend to allow the nearest fallback to commit instead.
+    // if the required timeout is finite we treat it like it is zero
+    // and allow the tree to commit as is.
+    if (requiredTimeout === Infinity) {
+      const nearestBoundary = getSuspenseHandler();
+      if (nearestBoundary !== null) {
+        // When there is a suspense boundary we can put into fallback we do
+        // If not we'll commit without waiting for the required resource
+        suspendCommit();
+      }
+    }
   } else {
-    // Preload the instance
-    const isReady = preloadInstance(type, props);
-    if (!isReady) {
+    if (requiredTimeout) {
       if (shouldRemainOnPreviousScreen()) {
         // It's OK to suspend. Mark the fiber so we know to suspend before the
         // commit phase. Then continue rendering.
@@ -588,12 +587,25 @@ function preloadResourceAndSuspendIfNeeded(
 
   workInProgress.flags |= MaySuspendCommit;
 
+  const requiredTimeout = preloadResource(resource);
   const rootRenderLanes = getWorkInProgressRootRenderLanes();
   if (!includesOnlyNonUrgentLanes(rootRenderLanes)) {
-    // This is an urgent render. Don't suspend or show a fallback.
+    // This is an urgent render. If our required timeout is infinite
+    // we suspend to allow the nearest fallback to commit instead.
+    // if the required timeout is finite we treat it like it is zero
+    // and allow the tree to commit as is.
+    if (requiredTimeout === Infinity) {
+      const nearestBoundary = getSuspenseHandler();
+      if (nearestBoundary !== null) {
+        // When there is a suspense boundary we can put into fallback we do
+        // If not we'll commit without waiting for the required resource
+        suspendCommit();
+      }
+    }
   } else {
-    const isReady = preloadResource(resource);
-    if (!isReady) {
+    // This is a transition. If the resource is not ready
+    // we can suspend to allow the nearest fallback to commit instead.
+    if (requiredTimeout) {
       if (shouldRemainOnPreviousScreen()) {
         workInProgress.flags |= ShouldSuspendCommit;
       } else {
