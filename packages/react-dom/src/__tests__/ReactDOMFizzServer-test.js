@@ -3703,14 +3703,16 @@ describe('ReactDOMFizzServer', () => {
   });
 
   // https://github.com/facebook/react/issues/27540
-  // This test is not actually asserting much because there is possibly a bug in the closeing logic for the
-  // Node implementation of Fizz. The close leads to an abort which sets the destination to null before the Float
-  // method has an opportunity to schedule a write. We should fix this probably and once we do this test will start
-  // to fail if the underyling issue of writing after stream completion isn't fixed
   it('does not try to write to the stream after it has been closed', async () => {
+    let resolve;
+    const promise = new Promise(res => {
+      resolve = res;
+    });
     async function preloadLate() {
       await 1;
       ReactDOM.preconnect('foo');
+      await promise;
+      ReactDOM.preconnect('bar');
     }
 
     function Preload() {
@@ -3732,9 +3734,15 @@ describe('ReactDOMFizzServer', () => {
       renderToPipeableStream(<App />).pipe(writable);
     });
 
+    await act(() => {
+      resolve();
+    });
+
     expect(getVisibleChildren(document)).toEqual(
       <html>
-        <head />
+        <head>
+          <link rel="preconnect" href="foo" />
+        </head>
         <body>
           <main>hello</main>
         </body>
@@ -5976,22 +5984,6 @@ describe('ReactDOMFizzServer', () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(<App />);
       pipe(writable);
-    });
-
-    // TODO: The `act` implementation in this file doesn't unwrap microtasks
-    // automatically. We can't use the same `act` we use for Fiber tests
-    // because that relies on the mock Scheduler. Doesn't affect any public
-    // API but we might want to fix this for our own internal tests.
-    //
-    // For now, wait for each promise in sequence.
-    await act(async () => {
-      await promiseA;
-    });
-    await act(async () => {
-      await promiseB;
-    });
-    await act(async () => {
-      await promiseC;
     });
 
     expect(getVisibleChildren(container)).toEqual('ABC');

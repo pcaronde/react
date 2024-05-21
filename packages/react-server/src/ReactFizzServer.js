@@ -297,9 +297,14 @@ const OPEN = 0;
 const CLOSING = 1;
 const CLOSED = 2;
 
+type ScheduleState = 10 | 11 | 12;
+const IDLE = 10;
+const WORK = 11;
+const FLUSH = 12;
+
 export opaque type Request = {
   destination: null | Destination,
-  flushScheduled: boolean,
+  schedule: ScheduleState,
   +resumableState: ResumableState,
   +renderState: RenderState,
   +rootFormatContext: FormatContext,
@@ -381,7 +386,7 @@ export function createRequest(
   const abortSet: Set<Task> = new Set();
   const request: Request = {
     destination: null,
-    flushScheduled: false,
+    schedule: IDLE,
     resumableState,
     renderState,
     rootFormatContext,
@@ -493,7 +498,7 @@ export function resumeRequest(
   const abortSet: Set<Task> = new Set();
   const request: Request = {
     destination: null,
-    flushScheduled: false,
+    schedule: IDLE,
     resumableState: postponedState.resumableState,
     renderState,
     rootFormatContext: postponedState.rootFormatContext,
@@ -594,9 +599,16 @@ export function resolveRequest(): null | Request {
 function pingTask(request: Request, task: Task): void {
   const pingedTasks = request.pingedTasks;
   pingedTasks.push(task);
-  if (request.pingedTasks.length === 1) {
-    request.flushScheduled = request.destination !== null;
-    scheduleWork(() => performWork(request));
+  if (pingedTasks.length === 1) {
+    if (request.schedule === WORK) {
+      // We're pinging in a microtask or a macrotask interleaving the prior
+      // work task and the scheduled flush task. Either way we render it synchronously.
+      performWork(request);
+      return;
+    }
+    // We're pinging in a new task, we can schedule a new work epoch and let
+    // additional pings queue.
+    startPerformingWork(request);
   }
 }
 
@@ -626,7 +638,6 @@ function createSuspenseBoundary(
   }
   return boundary;
 }
-
 function createRenderTask(
   request: Request,
   thenableState: ThenableState | null,
@@ -3816,9 +3827,6 @@ export function performWork(request: Request): void {
       retryTask(request, task);
     }
     pingedTasks.splice(0, i);
-    if (request.destination !== null) {
-      flushCompletedQueues(request, request.destination);
-    }
   } catch (error) {
     const errorInfo: ThrownInfo = {};
     logRecoverableError(request, error, errorInfo);
@@ -4280,7 +4288,6 @@ function flushCompletedQueues(
       // We don't need to check any partially completed segments because
       // either they have pending task or they're complete.
     ) {
-      request.flushScheduled = false;
       // We write the trailing tags but only if don't have any data to resume.
       // If we need to resume we'll write the postamble in the resume instead.
       if (!enablePostpone || request.trackedPostpones === null) {
@@ -4307,13 +4314,28 @@ function flushCompletedQueues(
   }
 }
 
-export function startWork(request: Request): void {
-  request.flushScheduled = request.destination !== null;
+function flushWork(request: Request) {
+  request.schedule = IDLE;
+  const destination = request.destination;
+  if (destination) {
+    flushCompletedQueues(request, destination);
+  }
+}
+
+function startPerformingWork(request: Request): void {
+  request.schedule = WORK;
   if (supportsRequestStorage) {
     scheduleWork(() => requestStorage.run(request, performWork, request));
   } else {
     scheduleWork(() => performWork(request));
   }
+  scheduleWork(() => {
+    flushWork(request);
+  });
+}
+
+export function startWork(request: Request): void {
+  startPerformingWork(request);
   if (request.trackedPostpones === null) {
     // this is either a regular render or a resume. For regular render we want
     // to call emitEarlyPreloads after the first performWork because we want
@@ -4345,22 +4367,28 @@ function enqueueEarlyPreloadsAfterInitialWork(request: Request) {
 
 function enqueueFlush(request: Request): void {
   if (
-    request.flushScheduled === false &&
+    request.schedule === IDLE &&
     // If there are pinged tasks we are going to flush anyway after work completes
     request.pingedTasks.length === 0 &&
     // If there is no destination there is nothing we can flush to. A flush will
     // happen when we start flowing again
     request.destination !== null
   ) {
-    request.flushScheduled = true;
+    request.schedule = FLUSH;
     scheduleWork(() => {
+      if (request.schedule !== FLUSH) {
+        // We already flushed or we started a new render and will let that finish first
+        // which will end up flushing so we have nothing to do here.
+        return;
+      }
+
+      request.schedule = IDLE;
+
       // We need to existence check destination again here because it might go away
       // in between the enqueueFlush call and the work execution
       const destination = request.destination;
       if (destination) {
         flushCompletedQueues(request, destination);
-      } else {
-        request.flushScheduled = false;
       }
     });
   }
