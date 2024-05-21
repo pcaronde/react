@@ -899,7 +899,7 @@ describe('ReactFlight', () => {
               expectedMessage={
                 __DEV__
                   ? 'Functions are not valid as a child of Client Components. This may happen if you return fn instead of <fn /> from render. Or maybe you meant to call this function rather than return it.'
-                  : 'Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with "use server".'
+                  : 'Functions declared in a Server Module cannot be passed directly to Client Components.'
               }>
               <Render promise={ReactNoopFlightClient.read(fn)} />
             </ErrorBoundary>
@@ -916,13 +916,13 @@ describe('ReactFlight', () => {
               expectedMessage={
                 __DEV__
                   ? 'Functions are not valid as a child of Client Components. This may happen if you return Component instead of <Component /> from render. Or maybe you meant to call this function rather than return it.'
-                  : 'Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with "use server".'
+                  : 'Functions declared in a Server Module cannot be passed directly to Client Components.'
               }>
               <Render promise={ReactNoopFlightClient.read(fnChildrenClient)} />
             </ErrorBoundary>
             <ErrorBoundary
               expectedMessage={
-                'Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with "use server".'
+                'Functions declared in a Server Module cannot be passed directly to Client Components.'
               }>
               <Render promise={ReactNoopFlightClient.read(fnClient)} />
             </ErrorBoundary>
