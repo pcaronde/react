@@ -370,9 +370,14 @@ type Task = {
 
 interface Reference {}
 
+type ScheduleState = 10 | 11 | 12;
+const IDLE = 10;
+const WORK = 11;
+const FLUSH = 12;
+
 export type Request = {
   status: 0 | 1 | 2,
-  flushScheduled: boolean,
+  schedule: ScheduleState,
   fatalError: mixed,
   destination: null | Destination,
   bundlerConfig: ClientManifest,
@@ -471,7 +476,7 @@ export function createRequest(
   const hints = createHints();
   const request: Request = ({
     status: OPEN,
-    flushScheduled: false,
+    schedule: IDLE,
     fatalError: null,
     destination: null,
     bundlerConfig,
@@ -1408,8 +1413,7 @@ function pingTask(request: Request, task: Task): void {
   const pingedTasks = request.pingedTasks;
   pingedTasks.push(task);
   if (pingedTasks.length === 1) {
-    request.flushScheduled = request.destination !== null;
-    scheduleWork(() => performWork(request));
+    startPerformingWork(request);
   }
 }
 
@@ -3221,9 +3225,6 @@ function performWork(request: Request): void {
       const task = pingedTasks[i];
       retryTask(request, task);
     }
-    if (request.destination !== null) {
-      flushCompletedChunks(request, request.destination);
-    }
   } catch (error) {
     logRecoverableError(request, error);
     fatalError(request, error);
@@ -3311,7 +3312,6 @@ function flushCompletedChunks(
     }
     errorChunks.splice(0, i);
   } finally {
-    request.flushScheduled = false;
     completeWriting(destination);
   }
   flushBuffered(destination);
@@ -3325,27 +3325,56 @@ function flushCompletedChunks(
   }
 }
 
-export function startWork(request: Request): void {
-  request.flushScheduled = request.destination !== null;
+function flushWork(request: Request) {
+  request.schedule = IDLE;
+  const destination = request.destination;
+  if (destination) {
+    flushCompletedChunks(request, destination);
+  }
+}
+
+function startPerformingWork(request: Request): void {
+  request.schedule = WORK;
   if (supportsRequestStorage) {
     scheduleWork(() => requestStorage.run(request, performWork, request));
   } else {
     scheduleWork(() => performWork(request));
   }
+  scheduleWork(() => {
+    flushWork(request);
+  });
+}
+
+export function startWork(request: Request): void {
+  startPerformingWork(request);
 }
 
 function enqueueFlush(request: Request): void {
   if (
-    request.flushScheduled === false &&
+    request.schedule === IDLE &&
     // If there are pinged tasks we are going to flush anyway after work completes
     request.pingedTasks.length === 0 &&
     // If there is no destination there is nothing we can flush to. A flush will
     // happen when we start flowing again
     request.destination !== null
   ) {
-    const destination = request.destination;
-    request.flushScheduled = true;
-    scheduleWork(() => flushCompletedChunks(request, destination));
+    request.schedule = FLUSH;
+    scheduleWork(() => {
+      if (request.schedule !== FLUSH) {
+        // We already flushed or we started a new render and will let that finish first
+        // which will end up flushing so we have nothing to do here.
+        return;
+      }
+
+      request.schedule = IDLE;
+
+      // We need to existence check destination again here because it might go away
+      // in between the enqueueFlush call and the work execution
+      const destination = request.destination;
+      if (destination) {
+        flushCompletedChunks(request, destination);
+      }
+    });
   }
 }
 
